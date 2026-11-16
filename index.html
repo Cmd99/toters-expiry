@@ -9,9 +9,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="اكسباير توترز">
-    <link rel="manifest" href="manifest.json?v=4">
-    <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=4">
-<link rel="apple-touch-icon" href="icon.png">
+    <link rel="manifest" href="manifest.json?v=5">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=5">
+    <link rel="apple-touch-icon" href="icon.png">
     <title>اكسباير توترز</title>
     <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js" defer></script>
     <style>
@@ -93,6 +93,11 @@
             grid-template-columns: 1.3fr 0.7fr;
             gap: 10px;
             margin-bottom: 14px;
+        }
+        .img-btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
         }
         label { display: block; font-size: 0.84rem; color: #cbd5e1; margin-bottom: 6px; }
         input[type="text"], input[type="date"], input[type="number"] {
@@ -203,17 +208,26 @@
         .text-wait { color: #fbbf24; }
 
         .preview-box {
-            margin-top: 8px;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--input);
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            border-radius: 10px;
+        }
+        .preview-left {
             display: flex;
             align-items: center;
             gap: 10px;
         }
         .preview-box img {
-            width: 54px;
-            height: 54px;
+            width: 58px;
+            height: 58px;
             object-fit: cover;
             border-radius: 8px;
-            border: 1px solid var(--border);
+            border: 1px solid var(--primary);
         }
 
         .team-tools {
@@ -234,8 +248,8 @@
             align-items: flex-start;
         }
         .item-thumb {
-            width: 66px;
-            height: 66px;
+            width: 68px;
+            height: 68px;
             border-radius: 10px;
             object-fit: cover;
             background: #1e293b;
@@ -246,6 +260,12 @@
             justify-content: center;
             color: var(--muted);
             font-size: 1.5rem;
+        }
+        .zoomable-img {
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: none !important;
+            user-select: none !important;
+            cursor: zoom-in;
         }
         .item-info { flex: 1; min-width: 0; }
         .item-title { font-weight: 700; font-size: 0.98rem; margin: 0 0 4px; word-break: break-word; }
@@ -310,6 +330,48 @@
             margin-top: 10px;
         }
 
+        /* نافذة تكبير الصورة بالضغط المطول */
+        .zoom-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.92);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 18px;
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: none !important;
+            user-select: none !important;
+            animation: zoomPop 0.14s ease-out;
+        }
+        @keyframes zoomPop {
+            from { opacity: 0; transform: scale(0.92); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .zoom-modal img {
+            max-width: 94vw;
+            max-height: 78vh;
+            border-radius: 16px;
+            border: 2px solid var(--primary);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85);
+            object-fit: contain;
+            pointer-events: none;
+        }
+        .zoom-hint {
+            margin-top: 14px;
+            background: rgba(30, 41, 59, 0.9);
+            color: #e2e8f0;
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            border: 1px solid var(--border);
+            pointer-events: none;
+        }
+
         .dev-footer {
             margin-top: 22px;
             padding: 14px 8px 8px;
@@ -333,6 +395,11 @@
     </style>
 </head>
 <body>
+
+<div id="imageZoomModal" class="zoom-modal hidden" oncontextmenu="return false;">
+    <img id="zoomModalImg" src="" alt="معاينة مكبرة">
+    <div class="zoom-hint">ارفع إصبعك للرجوع</div>
+</div>
 
 <div class="container">
     <header>
@@ -406,13 +473,25 @@
 
             <div class="form-group">
                 <label>صورة المنتج (اختياري)</label>
-                <label class="btn btn-slate" style="width: 100%;">
-                    🖼️ تصوير أو اختيار صورة المنتج
-                    <input type="file" accept="image/*" id="productImageInput" class="hidden" onchange="previewProductImage(this)">
-                </label>
+                <div class="img-btn-grid">
+                    <label class="btn btn-blue" style="margin:0;">
+                        📷 التقاط بالكاميرا
+                        <input type="file" accept="image/*" capture="environment" id="productCameraInput" class="hidden" onchange="previewProductImage(this)">
+                    </label>
+                    <label class="btn btn-slate" style="margin:0;">
+                        🖼️ من الاستوديو
+                        <input type="file" accept="image/*" id="productGalleryInput" class="hidden" onchange="previewProductImage(this)">
+                    </label>
+                </div>
                 <div id="imagePreviewBox" class="preview-box hidden">
-                    <img id="imagePreview" src="" alt="معاينة">
-                    <span class="status-msg text-ok" style="margin:0;">✅ تم تجهيز الصورة</span>
+                    <div class="preview-left">
+                        <img id="imagePreview" class="zoomable-img" src="" alt="معاينة" oncontextmenu="return false;">
+                        <div>
+                            <span class="status-msg text-ok" style="margin:0; font-weight:600;">✅ صورة عالية الدقة جاهزة</span>
+                            <span style="font-size:0.73rem; color:#94a3b8;">اضغط مطولاً على الصورة للمعاينة</span>
+                        </div>
+                    </div>
+                    <button type="button" onclick="clearSelectedImage()" class="btn btn-sm btn-danger">✖️</button>
                 </div>
             </div>
 
@@ -450,7 +529,7 @@
 <script>
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js?v=4').then(reg => reg.update()).catch(() => {});
+            navigator.serviceWorker.register('./sw.js?v=5').then(reg => reg.update()).catch(() => {});
         });
     }
 
@@ -482,6 +561,72 @@
             alert("للتثبيت: اضغط على النقاط الثلاث (⋮) في أعلى المتصفح واختر 'تثبيت التطبيق' أو 'الإضافة إلى الشاشة الرئيسية'.");
         }
     }
+
+    // منطق الضغط المطول لتكبير الصورة مؤقتاً
+    let holdTimer = null;
+    let holdStartX = 0;
+    let holdStartY = 0;
+    let isZoomOpen = false;
+
+    function openZoomModal(src) {
+        if (!src) return;
+        const modal = document.getElementById('imageZoomModal');
+        const img = document.getElementById('zoomModalImg');
+        img.src = src;
+        modal.classList.remove('hidden');
+        isZoomOpen = true;
+        if (navigator.vibrate) navigator.vibrate(25);
+    }
+
+    function closeZoomModal() {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+        if (isZoomOpen) {
+            document.getElementById('imageZoomModal').classList.add('hidden');
+            document.getElementById('zoomModalImg').src = '';
+            isZoomOpen = false;
+        }
+    }
+
+    function attachHoldZoomEvents(imgEl) {
+        if (!imgEl || imgEl.dataset.zoomBound) return;
+        imgEl.dataset.zoomBound = "1";
+
+        imgEl.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            holdStartX = e.touches[0].clientX;
+            holdStartY = e.touches[0].clientY;
+            holdTimer = setTimeout(() => {
+                openZoomModal(imgEl.src);
+            }, 150);
+        }, { passive: true });
+
+        imgEl.addEventListener('touchmove', (e) => {
+            if (!holdTimer || e.touches.length !== 1) return;
+            const dx = Math.abs(e.touches[0].clientX - holdStartX);
+            const dy = Math.abs(e.touches[0].clientY - holdStartY);
+            if (dx > 10 || dy > 10) {
+                clearTimeout(holdTimer);
+                holdTimer = null;
+            }
+        }, { passive: true });
+
+        imgEl.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            holdTimer = setTimeout(() => {
+                openZoomModal(imgEl.src);
+            }, 150);
+        });
+    }
+
+    window.addEventListener('touchend', closeZoomModal, { passive: true });
+    window.addEventListener('touchcancel', closeZoomModal, { passive: true });
+    window.addEventListener('mouseup', closeZoomModal);
+    window.addEventListener('blur', closeZoomModal);
+
+    attachHoldZoomEvents(document.getElementById('imagePreview'));
 
     let items = JSON.parse(localStorage.getItem('toters_picker_items_v2')) || [];
     let currentCompressedImage = "";
@@ -558,7 +703,6 @@
         lastCode = "";
         codeConfirmCount = 0;
 
-        // 1. محرك الأندرويد السريع المدمج
         if ('BarcodeDetector' in window && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             try {
                 video.classList.remove('hidden');
@@ -606,7 +750,6 @@
             }
         }
 
-        // 2. محرك الآيفون السريع (Quagga2) للباركود الخطي من أي زاوية
         if (typeof Quagga !== 'undefined') {
             video.classList.add('hidden');
             quaggaDiv.classList.remove('hidden');
@@ -784,6 +927,13 @@
         }
     });
 
+    function clearSelectedImage() {
+        currentCompressedImage = "";
+        document.getElementById('productCameraInput').value = "";
+        document.getElementById('productGalleryInput').value = "";
+        document.getElementById('imagePreviewBox').classList.add('hidden');
+    }
+
     function previewProductImage(input) {
         if (!input.files || !input.files[0]) return;
         const reader = new FileReader();
@@ -791,15 +941,19 @@
             const img = new Image();
             img.onload = function() {
                 const canvas = document.createElement('canvas');
-                const maxSize = 220;
+                const maxSize = 800;
                 let w = img.width, h = img.height;
-                if (w > h && w > maxSize) { h *= maxSize / w; w = maxSize; }
-                else if (h > maxSize) { w *= maxSize / h; h = maxSize; }
+                if (w > h && w > maxSize) { h = Math.round(h * (maxSize / w)); w = maxSize; }
+                else if (h > maxSize) { w = Math.round(w * (maxSize / h)); h = maxSize; }
                 canvas.width = w;
                 canvas.height = h;
-                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                currentCompressedImage = canvas.toDataURL('image/jpeg', 0.7);
-                document.getElementById('imagePreview').src = currentCompressedImage;
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, w, h);
+                currentCompressedImage = canvas.toDataURL('image/jpeg', 0.82);
+                const previewImg = document.getElementById('imagePreview');
+                previewImg.src = currentCompressedImage;
                 document.getElementById('imagePreviewBox').classList.remove('hidden');
             };
             img.src = e.target.result;
@@ -953,7 +1107,7 @@
             const status = getExpiryStatus(item.expiry);
             const qty = parseInt(item.qty) || 1;
             const imgHtml = item.image
-                ? `<img src="${item.image}" class="item-thumb" alt="${item.name}">`
+                ? `<img src="${item.image}" class="item-thumb zoomable-img" alt="${item.name}" oncontextmenu="return false;">`
                 : `<div class="item-thumb">📦</div>`;
 
             const card = document.createElement('div');
@@ -978,6 +1132,9 @@
                 </div>
             `;
             list.appendChild(card);
+
+            const thumbEl = card.querySelector('img.zoomable-img');
+            if (thumbEl) attachHoldZoomEvents(thumbEl);
         });
     }
 
@@ -1000,8 +1157,7 @@
 
         this.reset();
         document.getElementById('itemQty').value = 1;
-        currentCompressedImage = "";
-        document.getElementById('imagePreviewBox').classList.add('hidden');
+        clearSelectedImage();
         document.getElementById('scanStatus').innerText = "";
         renderItems();
         playBeep(false);
