@@ -9,12 +9,12 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="اكسباير توترز">
-    <link rel="manifest" href="manifest.json?v=3">
-    <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=3">
-    <link rel="apple-touch-icon" sizes="180x180" href="icon.png?v=3">
-    <link rel="apple-touch-icon" sizes="512x512" href="icon.png?v=3">
+    <link rel="manifest" href="manifest.json?v=4">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=4">
+    <link rel="apple-touch-icon" sizes="180x180" href="icon.png?v=4">
+    <link rel="apple-touch-icon" sizes="512x512" href="icon.png?v=4">
     <title>اكسباير توترز</title>
-    <script src="https://unpkg.com/html5-qrcode" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js" defer></script>
     <style>
         :root {
             --bg: #0f172a;
@@ -144,23 +144,45 @@
         }
         #scannerVideo {
             width: 100%;
-            max-height: 230px;
+            height: 230px;
             object-fit: cover;
             display: block;
         }
-        #fallbackReader {
+        #quaggaTarget {
+            position: relative;
             width: 100%;
-            min-height: 210px;
+            height: 230px;
+            overflow: hidden;
+            background: #000;
         }
-        #fallbackReader video {
+        #quaggaTarget video, #quaggaTarget canvas {
+            width: 100% !important;
+            height: 230px !important;
             object-fit: cover !important;
-            border-radius: 0 !important;
+            display: block;
+        }
+        #quaggaTarget canvas.drawingBuffer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0.45;
+        }
+        .scan-guide-box {
+            position: absolute;
+            top: 24%;
+            left: 10%;
+            right: 10%;
+            bottom: 24%;
+            border: 2px dashed rgba(16, 185, 129, 0.75);
+            border-radius: 10px;
+            pointer-events: none;
+            z-index: 9;
         }
         .scan-line {
             position: absolute;
             top: 50%;
-            left: 8%;
-            right: 8%;
+            left: 10%;
+            right: 10%;
             height: 2px;
             background: #ef4444;
             box-shadow: 0 0 8px #ef4444;
@@ -169,6 +191,7 @@
         }
         .scanner-controls {
             display: flex;
+            flex-wrap: wrap;
             gap: 8px;
             padding: 10px;
             background: #0b1120;
@@ -356,12 +379,16 @@
                 </div>
 
                 <div id="liveScannerBox" class="scanner-box hidden">
-                    <video id="scannerVideo" playsinline autoplay muted></video>
-                    <div id="fallbackReader" class="hidden"></div>
-                    <div class="scan-line" id="scanLine"></div>
+                    <div style="position: relative;">
+                        <video id="scannerVideo" playsinline autoplay muted></video>
+                        <div id="quaggaTarget" class="hidden"></div>
+                        <div class="scan-guide-box"></div>
+                        <div class="scan-line"></div>
+                    </div>
                     <div class="scanner-controls">
                         <button type="button" id="torchBtn" onclick="toggleTorch()" class="btn btn-sm btn-alarm hidden">🔦 فلاش</button>
-                        <button type="button" onclick="stopLiveScanner(false)" class="btn btn-sm btn-danger">✖️ إغلاق الكاميرا</button>
+                        <button type="button" id="snapDecodeBtn" onclick="snapAndDecode()" class="btn btn-sm btn-blue hidden">📸 التقط الآن</button>
+                        <button type="button" onclick="stopLiveScanner(false)" class="btn btn-sm btn-danger">✖️ إغلاق</button>
                     </div>
                 </div>
                 <span id="scanStatus" class="status-msg"></span>
@@ -424,7 +451,7 @@
 <script>
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js').catch(() => {});
+            navigator.serviceWorker.register('./sw.js?v=4').then(reg => reg.update()).catch(() => {});
         });
     }
 
@@ -462,7 +489,9 @@
     let videoStream = null;
     let scanInterval = null;
     let torchOn = false;
-    let html5QrFallback = null;
+    let quaggaRunning = false;
+    let lastCode = "";
+    let codeConfirmCount = 0;
 
     function playBeep(loud = false) {
         try {
@@ -521,18 +550,21 @@
     async function startLiveScanner() {
         const box = document.getElementById('liveScannerBox');
         const video = document.getElementById('scannerVideo');
-        const fallbackDiv = document.getElementById('fallbackReader');
+        const quaggaDiv = document.getElementById('quaggaTarget');
         const status = document.getElementById('scanStatus');
 
         box.classList.remove('hidden');
         status.className = "status-msg text-wait";
-        status.innerText = "⏳ جاري تشغيل الكاميرا... وجّه الخط الأحمر على الباركود";
+        status.innerText = "⏳ جاري تشغيل الكاميرا... ضع الباركود داخل الإطار";
+        lastCode = "";
+        codeConfirmCount = 0;
 
+        // 1. محرك الأندرويد السريع المدمج
         if ('BarcodeDetector' in window && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             try {
                 video.classList.remove('hidden');
-                fallbackDiv.classList.add('hidden');
-                document.getElementById('scanLine').classList.remove('hidden');
+                quaggaDiv.classList.add('hidden');
+                document.getElementById('snapDecodeBtn').classList.add('hidden');
 
                 videoStream = await navigator.mediaDevices.getUserMedia({
                     video: {
@@ -570,59 +602,130 @@
             } catch (err) {
                 stopLiveScanner(true);
                 status.className = "status-msg text-err";
-                status.innerText = "❌ تعذر الوصول للكاميرا. تأكد من السماح بصلاحية الكاميرا في المتصفح.";
+                status.innerText = "❌ تعذر الوصول للكاميرا. تأكد من السماح بصلاحية الكاميرا.";
                 return;
             }
         }
 
-        if (typeof Html5Qrcode !== 'undefined') {
+        // 2. محرك الآيفون السريع (Quagga2) للباركود الخطي من أي زاوية
+        if (typeof Quagga !== 'undefined') {
             video.classList.add('hidden');
-            document.getElementById('scanLine').classList.remove('hidden');
-            fallbackDiv.classList.remove('hidden');
+            quaggaDiv.classList.remove('hidden');
+            document.getElementById('snapDecodeBtn').classList.remove('hidden');
 
-            const formats = typeof Html5QrcodeSupportedFormats !== 'undefined' ? [
-                Html5QrcodeSupportedFormats.EAN_13,
-                Html5QrcodeSupportedFormats.EAN_8,
-                Html5QrcodeSupportedFormats.UPC_A,
-                Html5QrcodeSupportedFormats.UPC_E,
-                Html5QrcodeSupportedFormats.CODE_128,
-                Html5QrcodeSupportedFormats.CODE_39,
-                Html5QrcodeSupportedFormats.ITF
-            ] : undefined;
-
-            html5QrFallback = new Html5Qrcode("fallbackReader", {
-                formatsToSupport: formats,
-                experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-                verbose: false
-            });
-
-            html5QrFallback.start(
-                { facingMode: "environment" },
-                {
-                    fps: 20,
-                    aspectRatio: 1.777778,
-                    qrbox: function(vw, vh) {
-                        return {
-                            width: Math.min(290, Math.floor(vw * 0.86)),
-                            height: Math.min(115, Math.floor(vh * 0.45))
-                        };
-                    },
-                    videoConstraints: {
+            Quagga.init({
+                inputStream: {
+                    name: "Live",
+                    type: "LiveStream",
+                    target: quaggaDiv,
+                    constraints: {
                         facingMode: "environment",
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
+                        width: { min: 640, ideal: 1920, max: 1920 },
+                        height: { min: 480, ideal: 1080, max: 1080 }
+                    },
+                    area: {
+                        top: "18%",
+                        right: "6%",
+                        left: "6%",
+                        bottom: "18%"
                     }
                 },
-                (decodedText) => onBarcodeDetected(decodedText),
-                () => {}
-            ).then(() => {
+                locator: {
+                    patchSize: "medium",
+                    halfSample: true
+                },
+                numOfWorkers: 0,
+                frequency: 15,
+                decoder: {
+                    readers: [
+                        "ean_reader",
+                        "ean_8_reader",
+                        "upc_reader",
+                        "upc_e_reader",
+                        "code_128_reader",
+                        "code_39_reader"
+                    ]
+                },
+                locate: true
+            }, function(err) {
+                if (err) {
+                    stopLiveScanner(true);
+                    status.className = "status-msg text-err";
+                    status.innerText = "❌ تعذر فتح كاميرا الآيفون، تأكد من منح الإذن في Safari.";
+                    return;
+                }
+                Quagga.start();
+                quaggaRunning = true;
                 history.pushState({ scanner: true }, '');
-            }).catch(() => {
-                stopLiveScanner(true);
-                status.className = "status-msg text-err";
-                status.innerText = "❌ تعذر فتح الكاميرا، تأكد من منح الإذن في إعدادات الآيفون.";
+
+                try {
+                    const track = Quagga.CameraAccess.getActiveTrack();
+                    if (track) {
+                        const caps = track.getCapabilities ? track.getCapabilities() : {};
+                        if (caps.focusMode && caps.focusMode.includes('continuous')) {
+                            track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+                        }
+                        if (caps.torch) {
+                            document.getElementById('torchBtn').classList.remove('hidden');
+                        }
+                    }
+                } catch (e) {}
             });
+
+            Quagga.onDetected(function(result) {
+                if (!result || !result.codeResult || !result.codeResult.code) return;
+                const code = result.codeResult.code.trim();
+                if (code.length < 6) return;
+
+                if (code === lastCode) {
+                    codeConfirmCount++;
+                } else {
+                    lastCode = code;
+                    codeConfirmCount = 1;
+                }
+
+                if (codeConfirmCount >= 2) {
+                    onBarcodeDetected(code);
+                }
+            });
+        } else {
+            stopLiveScanner(true);
+            status.className = "status-msg text-err";
+            status.innerText = "❌ جاري تحميل مكتبة الماسح، تأكد من الاتصال بالإنترنت لأول مرة ثم أعد المحاولة.";
         }
+    }
+
+    function snapAndDecode() {
+        const qVideo = document.querySelector('#quaggaTarget video');
+        const status = document.getElementById('scanStatus');
+        if (!qVideo || typeof Quagga === 'undefined') return;
+
+        status.className = "status-msg text-wait";
+        status.innerText = "⏳ جاري تحليل اللقطة...";
+
+        const canvas = document.createElement('canvas');
+        canvas.width = qVideo.videoWidth || 1280;
+        canvas.height = qVideo.videoHeight || 720;
+        const ctx = canvas.getContext('2d');
+        ctx.filter = 'contrast(1.35) grayscale(1)';
+        ctx.drawImage(qVideo, 0, 0, canvas.width, canvas.height);
+
+        Quagga.decodeSingle({
+            src: canvas.toDataURL('image/jpeg', 0.92),
+            numOfWorkers: 0,
+            inputStream: { size: 1280 },
+            decoder: {
+                readers: ["ean_reader", "ean_8_reader", "upc_reader", "upc_e_reader", "code_128_reader", "code_39_reader"]
+            },
+            locate: true
+        }, function(result) {
+            if (result && result.codeResult && result.codeResult.code) {
+                onBarcodeDetected(result.codeResult.code.trim());
+            } else {
+                status.className = "status-msg text-err";
+                status.innerText = "⚠️ لم يظهر الباركود بوضوح، أبعد الهاتف قليلاً لتجنب انعكاس الإضاءة.";
+            }
+        });
     }
 
     function onBarcodeDetected(code) {
@@ -636,8 +739,14 @@
     }
 
     async function toggleTorch() {
-        if (!videoStream) return;
-        const track = videoStream.getVideoTracks()[0];
+        let track = null;
+        if (videoStream) {
+            track = videoStream.getVideoTracks()[0];
+        } else if (quaggaRunning && typeof Quagga !== 'undefined') {
+            try { track = Quagga.CameraAccess.getActiveTrack(); } catch (e) {}
+        }
+        if (!track) return;
+
         torchOn = !torchOn;
         try {
             await track.applyConstraints({ advanced: [{ torch: torchOn }] });
@@ -654,15 +763,16 @@
             videoStream.getTracks().forEach(track => track.stop());
             videoStream = null;
         }
-        if (html5QrFallback) {
+        if (quaggaRunning && typeof Quagga !== 'undefined') {
             try {
-                if (html5QrFallback.isScanning) {
-                    html5QrFallback.stop().then(() => html5QrFallback.clear()).catch(() => {});
-                }
+                Quagga.offDetected();
+                Quagga.stop();
             } catch (e) {}
+            quaggaRunning = false;
         }
         torchOn = false;
         document.getElementById('torchBtn').classList.add('hidden');
+        document.getElementById('snapDecodeBtn').classList.add('hidden');
         document.getElementById('liveScannerBox').classList.add('hidden');
         if (!fromPopState && history.state && history.state.scanner) {
             history.back();
