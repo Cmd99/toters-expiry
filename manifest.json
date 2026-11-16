@@ -1,6 +1,6 @@
 {
-  "name": "مراقب الصلاحيات - توترز بيكر",
-  "short_name": "صلاحيات توترز",
+  "name": "اكسباير توترز",
+  "short_name": "اكسباير توترز",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",
