@@ -9,8 +9,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="اكسباير توترز">
-    <link rel="manifest" href="manifest.json?v=5">
-    <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=5">
+    <link rel="manifest" href="manifest.json?v=6">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=6">
     <link rel="apple-touch-icon" href="icon.png">
     <title>اكسباير توترز</title>
     <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js" defer></script>
@@ -268,7 +268,41 @@
             cursor: zoom-in;
         }
         .item-info { flex: 1; min-width: 0; }
-        .item-title { font-weight: 700; font-size: 0.98rem; margin: 0 0 4px; word-break: break-word; }
+        .item-header-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .item-title {
+            font-weight: 700;
+            font-size: 0.98rem;
+            margin: 0;
+            word-break: break-word;
+            flex: 1;
+        }
+        .edit-icon-btn {
+            background: rgba(51, 65, 85, 0.75);
+            border: 1px solid #475569;
+            color: #e2e8f0;
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            cursor: pointer;
+            flex-shrink: 0;
+            padding: 0;
+            transition: 0.15s;
+        }
+        .edit-icon-btn:active {
+            transform: scale(0.92);
+            background: var(--blue);
+            border-color: var(--blue);
+        }
         .item-meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
 
         .badges-row {
@@ -328,6 +362,50 @@
             flex-wrap: wrap;
             gap: 6px;
             margin-top: 10px;
+        }
+
+        /* نافذة التعديل المنبثقة */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.85);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            z-index: 9000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px;
+            overflow-y: auto;
+        }
+        .modal-card {
+            background: var(--card);
+            border: 1px solid #475569;
+            border-radius: 18px;
+            width: 100%;
+            max-width: 480px;
+            padding: 18px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75);
+            animation: zoomPop 0.15s ease-out;
+        }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.05rem;
+            color: #6ee7b7;
+        }
+        .modal-footer-btns {
+            display: grid;
+            grid-template-columns: 1.4fr 0.6fr;
+            gap: 8px;
+            margin-top: 16px;
         }
 
         /* نافذة تكبير الصورة بالضغط المطول */
@@ -399,6 +477,64 @@
 <div id="imageZoomModal" class="zoom-modal hidden" oncontextmenu="return false;">
     <img id="zoomModalImg" src="" alt="معاينة مكبرة">
     <div class="zoom-hint">ارفع إصبعك للرجوع</div>
+</div>
+
+<!-- نافذة تعديل المنتج -->
+<div id="editModal" class="modal-backdrop hidden" onclick="if(event.target === this) closeEditModal()">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>✏️ تعديل بيانات المنتج</h3>
+            <button type="button" onclick="closeEditModal()" class="btn btn-sm btn-slate">✖️</button>
+        </div>
+        <form id="editForm">
+            <input type="hidden" id="editItemId">
+            <div class="form-group">
+                <label>اسم المادة / المنتج</label>
+                <input type="text" id="editItemName" required>
+            </div>
+            <div class="form-group">
+                <label>رقم الباركود</label>
+                <input type="text" id="editItemBarcode" required style="font-family: monospace;">
+            </div>
+            <div class="form-row-2">
+                <div>
+                    <label>تاريخ انتهاء الصلاحية</label>
+                    <input type="date" id="editItemExpiry" required>
+                </div>
+                <div>
+                    <label>العدد الباقي (قطعة)</label>
+                    <input type="number" id="editItemQty" min="1" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>تغيير أو إضافة صورة المنتج</label>
+                <div class="img-btn-grid">
+                    <label class="btn btn-blue" style="margin:0;">
+                        📷 كاميرا
+                        <input type="file" accept="image/*" capture="environment" id="editCameraInput" class="hidden" onchange="previewEditImage(this)">
+                    </label>
+                    <label class="btn btn-slate" style="margin:0;">
+                        🖼️ استوديو
+                        <input type="file" accept="image/*" id="editGalleryInput" class="hidden" onchange="previewEditImage(this)">
+                    </label>
+                </div>
+                <div id="editImagePreviewBox" class="preview-box hidden">
+                    <div class="preview-left">
+                        <img id="editImagePreview" class="zoomable-img" src="" alt="صورة المنتج" oncontextmenu="return false;">
+                        <div>
+                            <span class="status-msg text-ok" style="margin:0; font-weight:600;">صورة المنتج الحالية</span>
+                            <span style="font-size:0.73rem; color:#94a3b8;">اضغط مطولاً للتكبير</span>
+                        </div>
+                    </div>
+                    <button type="button" onclick="clearEditImage()" class="btn btn-sm btn-danger" title="إزالة الصورة">🗑️ إزالة</button>
+                </div>
+            </div>
+            <div class="modal-footer-btns">
+                <button type="submit" class="btn btn-primary" style="padding:11px; font-size:0.95rem;">💾 حفظ التعديلات</button>
+                <button type="button" onclick="closeEditModal()" class="btn btn-slate">إلغاء</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <div class="container">
@@ -529,7 +665,7 @@
 <script>
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js?v=5').then(reg => reg.update()).catch(() => {});
+            navigator.serviceWorker.register('./sw.js?v=6').then(reg => reg.update()).catch(() => {});
         });
     }
 
@@ -560,6 +696,12 @@
         } else {
             alert("للتثبيت: اضغط على النقاط الثلاث (⋮) في أعلى المتصفح واختر 'تثبيت التطبيق' أو 'الإضافة إلى الشاشة الرئيسية'.");
         }
+    }
+
+    function escapeHtml(str) {
+        return String(str || '').replace(/[&<>"']/g, m => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[m]));
     }
 
     // منطق الضغط المطول لتكبير الصورة مؤقتاً
@@ -627,9 +769,11 @@
     window.addEventListener('blur', closeZoomModal);
 
     attachHoldZoomEvents(document.getElementById('imagePreview'));
+    attachHoldZoomEvents(document.getElementById('editImagePreview'));
 
     let items = JSON.parse(localStorage.getItem('toters_picker_items_v2')) || [];
     let currentCompressedImage = "";
+    let editCompressedImage = "";
     let videoStream = null;
     let scanInterval = null;
     let torchOn = false;
@@ -927,15 +1071,7 @@
         }
     });
 
-    function clearSelectedImage() {
-        currentCompressedImage = "";
-        document.getElementById('productCameraInput').value = "";
-        document.getElementById('productGalleryInput').value = "";
-        document.getElementById('imagePreviewBox').classList.add('hidden');
-    }
-
-    function previewProductImage(input) {
-        if (!input.files || !input.files[0]) return;
+    function compressImageFile(file, callback) {
         const reader = new FileReader();
         reader.onload = function(e) {
             const img = new Image();
@@ -951,15 +1087,104 @@
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(img, 0, 0, w, h);
-                currentCompressedImage = canvas.toDataURL('image/jpeg', 0.82);
-                const previewImg = document.getElementById('imagePreview');
-                previewImg.src = currentCompressedImage;
-                document.getElementById('imagePreviewBox').classList.remove('hidden');
+                callback(canvas.toDataURL('image/jpeg', 0.82));
             };
             img.src = e.target.result;
         };
-        reader.readAsDataURL(input.files[0]);
+        reader.readAsDataURL(file);
     }
+
+    function clearSelectedImage() {
+        currentCompressedImage = "";
+        document.getElementById('productCameraInput').value = "";
+        document.getElementById('productGalleryInput').value = "";
+        document.getElementById('imagePreviewBox').classList.add('hidden');
+    }
+
+    function previewProductImage(input) {
+        if (!input.files || !input.files[0]) return;
+        compressImageFile(input.files[0], (dataUrl) => {
+            currentCompressedImage = dataUrl;
+            document.getElementById('imagePreview').src = currentCompressedImage;
+            document.getElementById('imagePreviewBox').classList.remove('hidden');
+        });
+    }
+
+    // دوال نافذة تعديل المنتج
+    function openEditModal(id) {
+        const item = items.find(i => i.id === id);
+        if (!item) return;
+
+        document.getElementById('editItemId').value = item.id;
+        document.getElementById('editItemName').value = item.name;
+        document.getElementById('editItemBarcode').value = item.barcode;
+        document.getElementById('editItemExpiry').value = item.expiry;
+        document.getElementById('editItemQty').value = parseInt(item.qty) || 1;
+        document.getElementById('editCameraInput').value = "";
+        document.getElementById('editGalleryInput').value = "";
+
+        editCompressedImage = item.image || "";
+        const editBox = document.getElementById('editImagePreviewBox');
+        if (editCompressedImage) {
+            document.getElementById('editImagePreview').src = editCompressedImage;
+            editBox.classList.remove('hidden');
+        } else {
+            document.getElementById('editImagePreview').src = "";
+            editBox.classList.add('hidden');
+        }
+
+        document.getElementById('editModal').classList.remove('hidden');
+    }
+
+    function closeEditModal() {
+        document.getElementById('editModal').classList.add('hidden');
+        editCompressedImage = "";
+    }
+
+    function previewEditImage(input) {
+        if (!input.files || !input.files[0]) return;
+        compressImageFile(input.files[0], (dataUrl) => {
+            editCompressedImage = dataUrl;
+            document.getElementById('editImagePreview').src = editCompressedImage;
+            document.getElementById('editImagePreviewBox').classList.remove('hidden');
+        });
+    }
+
+    function clearEditImage() {
+        editCompressedImage = "";
+        document.getElementById('editCameraInput').value = "";
+        document.getElementById('editGalleryInput').value = "";
+        document.getElementById('editImagePreviewBox').classList.add('hidden');
+    }
+
+    document.getElementById('editForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const id = Number(document.getElementById('editItemId').value);
+        const index = items.findIndex(i => i.id === id);
+        if (index === -1) return;
+
+        const oldItem = { ...items[index] };
+        items[index] = {
+            ...items[index],
+            name: document.getElementById('editItemName').value.trim(),
+            barcode: document.getElementById('editItemBarcode').value.trim(),
+            expiry: document.getElementById('editItemExpiry').value,
+            qty: Math.max(1, parseInt(document.getElementById('editItemQty').value) || 1),
+            image: editCompressedImage
+        };
+
+        try {
+            localStorage.setItem('toters_picker_items_v2', JSON.stringify(items));
+        } catch (err) {
+            alert("الذاكرة ممتلئة، تعذر حفظ الصورة الجديدة.");
+            items[index] = oldItem;
+            return;
+        }
+
+        closeEditModal();
+        renderItems();
+        playBeep(false);
+    });
 
     function getExpiryStatus(expiryDateStr) {
         const today = new Date();
@@ -1106,8 +1331,10 @@
         filtered.forEach(item => {
             const status = getExpiryStatus(item.expiry);
             const qty = parseInt(item.qty) || 1;
+            const safeName = escapeHtml(item.name);
+            const safeBarcode = escapeHtml(item.barcode);
             const imgHtml = item.image
-                ? `<img src="${item.image}" class="item-thumb zoomable-img" alt="${item.name}" oncontextmenu="return false;">`
+                ? `<img src="${item.image}" class="item-thumb zoomable-img" alt="${safeName}" oncontextmenu="return false;">`
                 : `<div class="item-thumb">📦</div>`;
 
             const card = document.createElement('div');
@@ -1115,8 +1342,11 @@
             card.innerHTML = `
                 ${imgHtml}
                 <div class="item-info">
-                    <div class="item-title">${item.name}</div>
-                    <div class="item-meta">الباركود: <strong style="color:#e2e8f0; font-family:monospace;">${item.barcode}</strong> • الانتهاء: ${item.expiry}</div>
+                    <div class="item-header-row">
+                        <div class="item-title">${safeName}</div>
+                        <button type="button" onclick="openEditModal(${item.id})" class="edit-icon-btn" title="تعديل المنتج">✏️</button>
+                    </div>
+                    <div class="item-meta">الباركود: <strong style="color:#e2e8f0; font-family:monospace;">${safeBarcode}</strong> • الانتهاء: ${item.expiry}</div>
                     <div class="badges-row">
                         <span class="badge ${status.cls}">${status.text}</span>
                         <span class="qty-pill">
