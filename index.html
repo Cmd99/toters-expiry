@@ -233,3 +233,513 @@
             color: var(--primary);
             font-family: monospace;
             font-weight: 700;
+            margin-right: 4px;
+        }
+        .dev-footer strong {
+            color: #94a3b8;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>📦 اكسباير توترز</h1>
+        <p>مسح باركود مباشر • تنبيهات ذكية • مشاركة الفريق</p>
+    </header>
+
+    <div id="alertBanner" class="alert-banner hidden">
+        <div>
+            <strong style="font-size: 0.9rem;">🚨 تنبيه صلاحية عاجل!</strong>
+            <div id="alertText" style="font-size: 0.8rem; margin-top: 2px;"></div>
+        </div>
+        <button type="button" onclick="playBeep(true)" class="btn btn-sm btn-danger">🔊 منبه</button>
+    </div>
+
+    <div class="card">
+        <h2>
+            <span>➕ إضافة منتج جديد</span>
+            <button type="button" id="notifPermBtn" onclick="requestNotifPermission()" class="btn btn-sm btn-slate">🔔 تفعيل الإشعارات</button>
+        </h2>
+
+        <form id="itemForm">
+            <div class="form-group">
+                <label>اسم المادة / المنتج</label>
+                <input type="text" id="itemName" required placeholder="مثال: جبنة المراعي 500غ">
+            </div>
+
+            <div class="form-group">
+                <label>رقم الباركود</label>
+                <div class="barcode-row">
+                    <input type="text" id="itemBarcode" required placeholder="امسح أو اكتب الرقم">
+                    <button type="button" onclick="toggleLiveScanner()" id="scanBtn" class="btn btn-blue">📷 مسح مباشر</button>
+                </div>
+
+                <div id="liveScannerBox" class="scanner-box hidden">
+                    <video id="scannerVideo" playsinline autoplay muted></video>
+                    <div id="fallbackReader" class="hidden"></div>
+                    <div class="scan-line" id="scanLine"></div>
+                    <div class="scanner-controls">
+                        <button type="button" id="torchBtn" onclick="toggleTorch()" class="btn btn-sm btn-alarm hidden">🔦 فلاش</button>
+                        <button type="button" onclick="stopLiveScanner(false)" class="btn btn-sm btn-danger">✖️ إغلاق الكاميرا</button>
+                    </div>
+                </div>
+                <span id="scanStatus" class="status-msg"></span>
+            </div>
+
+            <div class="form-group">
+                <label>تاريخ انتهاء الصلاحية</label>
+                <input type="date" id="itemExpiry" required>
+            </div>
+
+            <div class="form-group">
+                <label>صورة المنتج (اختياري)</label>
+                <label class="btn btn-slate" style="width: 100%;">
+                    🖼️ تصوير أو اختيار صورة المنتج
+                    <input type="file" accept="image/*" id="productImageInput" class="hidden" onchange="previewProductImage(this)">
+                </label>
+                <div id="imagePreviewBox" class="preview-box hidden">
+                    <img id="imagePreview" src="" alt="معاينة">
+                    <span class="status-msg text-ok" style="margin:0;">✅ تم تجهيز الصورة</span>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">💾 حفظ المادة في القائمة</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>📋 المواد المسجلة (<span id="totalCount">0</span>)</h2>
+
+        <button type="button" onclick="shareCriticalWhatsApp()" class="btn btn-whatsapp">
+            📲 إرسال تقرير المواد القريبة/المنتهية لكروب البيكرية
+        </button>
+
+        <div class="team-tools">
+            <button type="button" onclick="exportDatabase()" class="btn btn-sm btn-slate">📤 تصدير القائمة للزملاء</button>
+            <label class="btn btn-sm btn-slate" style="margin:0;">
+                📥 استيراد قائمة زميل
+                <input type="file" accept=".json" class="hidden" onchange="importDatabase(this)">
+            </label>
+        </div>
+
+        <div class="form-group">
+            <input type="text" id="searchInput" oninput="renderItems()" placeholder="🔍 ابحث باسم المادة أو رقم الباركود...">
+        </div>
+
+        <div id="itemsList"></div>
+    </div>
+
+    <footer class="dev-footer" dir="ltr">
+        <span class="code-tag">&lt;/&gt;</span> CREATED BY <strong>KHUBAIB MOHAMMED</strong>
+    </footer>
+</div>
+
+<script>
+    let items = JSON.parse(localStorage.getItem('toters_picker_items_v2')) || [];
+    let currentCompressedImage = "";
+    let videoStream = null;
+    let scanInterval = null;
+    let torchOn = false;
+    let html5QrFallback = null;
+
+    function playBeep(loud = false) {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const count = loud ? 3 : 1;
+            for (let i = 0; i < count; i++) {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(loud ? 950 : 1250, ctx.currentTime + i * 0.25);
+                gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.25);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(ctx.currentTime + i * 0.25);
+                osc.stop(ctx.currentTime + i * 0.25 + 0.16);
+            }
+        } catch (e) {}
+    }
+
+    function requestNotifPermission() {
+        if (!('Notification' in window)) {
+            alert("متصفحك لا يدعم الإشعارات المباشرة، استخدم زر 'ضبط منبه الهاتف' بجانب كل مادة.");
+            return;
+        }
+        Notification.requestPermission().then(perm => {
+            updateNotifButton();
+            if (perm === 'granted') {
+                new Notification("✅ تم تفعيل تنبيهات اكسباير توترز", {
+                    body: "سيتم تنبيهك بالمواد التي تقترب صلاحيتها من الانتهاء."
+                });
+            }
+        });
+    }
+
+    function updateNotifButton() {
+        const btn = document.getElementById('notifPermBtn');
+        if (!('Notification' in window)) {
+            btn.classList.add('hidden');
+            return;
+        }
+        if (Notification.permission === 'granted') {
+            btn.innerText = "🔔 الإشعارات مفعّلة";
+            btn.style.background = "#065f46";
+        }
+    }
+
+    function toggleLiveScanner() {
+        const box = document.getElementById('liveScannerBox');
+        if (!box.classList.contains('hidden')) {
+            stopLiveScanner(false);
+        } else {
+            startLiveScanner();
+        }
+    }
+
+    async function startLiveScanner() {
+        const box = document.getElementById('liveScannerBox');
+        const video = document.getElementById('scannerVideo');
+        const fallbackDiv = document.getElementById('fallbackReader');
+        const status = document.getElementById('scanStatus');
+
+        box.classList.remove('hidden');
+        status.className = "status-msg text-wait";
+        status.innerText = "⏳ جاري تشغيل الكاميرا... وجّه الخط الأحمر على الباركود";
+
+        if ('BarcodeDetector' in window && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            try {
+                video.classList.remove('hidden');
+                fallbackDiv.classList.add('hidden');
+                document.getElementById('scanLine').classList.remove('hidden');
+
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                });
+                video.srcObject = videoStream;
+                await video.play();
+                history.pushState({ scanner: true }, '');
+
+                const track = videoStream.getVideoTracks()[0];
+                const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+                if (capabilities.torch) {
+                    document.getElementById('torchBtn').classList.remove('hidden');
+                }
+
+                const detector = new BarcodeDetector({
+                    formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code']
+                });
+
+                scanInterval = setInterval(async () => {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        try {
+                            const barcodes = await detector.detect(video);
+                            if (barcodes && barcodes.length > 0) {
+                                onBarcodeDetected(barcodes[0].rawValue);
+                            }
+                        } catch (e) {}
+                    }
+                }, 220);
+                return;
+            } catch (err) {
+                stopLiveScanner(true);
+                status.className = "status-msg text-err";
+                status.innerText = "❌ تعذر الوصول للكاميرا. تأكد من السماح بصلاحية الكاميرا في المتصفح.";
+                return;
+            }
+        }
+
+        if (typeof Html5Qrcode !== 'undefined') {
+            video.classList.add('hidden');
+            document.getElementById('scanLine').classList.add('hidden');
+            fallbackDiv.classList.remove('hidden');
+
+            html5QrFallback = new Html5Qrcode("fallbackReader");
+            html5QrFallback.start(
+                { facingMode: "environment" },
+                { fps: 12, qrbox: { width: 260, height: 120 } },
+                (decodedText) => onBarcodeDetected(decodedText),
+                () => {}
+            ).then(() => {
+                history.pushState({ scanner: true }, '');
+            }).catch(() => {
+                stopLiveScanner(true);
+                status.className = "status-msg text-err";
+                status.innerText = "❌ تعذر فتح الكاميرا، تأكد من منح الإذن.";
+            });
+        }
+    }
+
+    function onBarcodeDetected(code) {
+        document.getElementById('itemBarcode').value = code;
+        const status = document.getElementById('scanStatus');
+        status.className = "status-msg text-ok";
+        status.innerText = "✅ تم التقاط الباركود فوراً: " + code;
+        if (navigator.vibrate) navigator.vibrate(120);
+        playBeep(false);
+        stopLiveScanner(false);
+    }
+
+    async function toggleTorch() {
+        if (!videoStream) return;
+        const track = videoStream.getVideoTracks()[0];
+        torchOn = !torchOn;
+        try {
+            await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+            document.getElementById('torchBtn').innerText = torchOn ? "🔦 إطفاء الفلاش" : "🔦 فلاش";
+        } catch (e) {}
+    }
+
+    function stopLiveScanner(fromPopState = false) {
+        if (scanInterval) {
+            clearInterval(scanInterval);
+            scanInterval = null;
+        }
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            videoStream = null;
+        }
+        if (html5QrFallback && html5QrFallback.isScanning) {
+            html5QrFallback.stop().catch(() => {});
+        }
+        torchOn = false;
+        document.getElementById('torchBtn').classList.add('hidden');
+        document.getElementById('liveScannerBox').classList.add('hidden');
+        if (!fromPopState && history.state && history.state.scanner) {
+            history.back();
+        }
+    }
+
+    window.addEventListener('popstate', () => {
+        if (!document.getElementById('liveScannerBox').classList.contains('hidden')) {
+            stopLiveScanner(true);
+        }
+    });
+
+    function previewProductImage(input) {
+        if (!input.files || !input.files[0]) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                const maxSize = 220;
+                let w = img.width, h = img.height;
+                if (w > h && w > maxSize) { h *= maxSize / w; w = maxSize; }
+                else if (h > maxSize) { w *= maxSize / h; h = maxSize; }
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                currentCompressedImage = canvas.toDataURL('image/jpeg', 0.7);
+                document.getElementById('imagePreview').src = currentCompressedImage;
+                document.getElementById('imagePreviewBox').classList.remove('hidden');
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+
+    function getExpiryStatus(expiryDateStr) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const expiry = new Date(expiryDateStr + "T00:00:00");
+        const diffDays = Math.round((expiry - today) / (1000 * 60 * 60 * 24));
+
+        if (diffDays < 0) return { days: diffDays, text: `⛔ منتهي منذ ${Math.abs(diffDays)} يوم!`, cls: 'b-expired', urgent: true };
+        if (diffDays <= 2) return { days: diffDays, text: `🚨 حرج جداً: باقي ${diffDays} يوم!`, cls: 'b-2d', urgent: true };
+        if (diffDays <= 7) return { days: diffDays, text: `⚠️ تنبيه أسبوع: باقي ${diffDays} يوم`, cls: 'b-7d', urgent: true };
+        if (diffDays <= 15) return { days: diffDays, text: `⚠️ تنبيه 15 يوم: باقي ${diffDays} يوم`, cls: 'b-15d', urgent: false };
+        if (diffDays <= 30) return { days: diffDays, text: `📌 تنبيه شهر: باقي ${diffDays} يوم`, cls: 'b-30d', urgent: false };
+        if (diffDays <= 60) return { days: diffDays, text: `📅 تنبيه شهرين: باقي ${diffDays} يوم`, cls: 'b-60d', urgent: false };
+        if (diffDays <= 90) return { days: diffDays, text: `ℹ️ تنبيه 3 أشهر: باقي ${diffDays} يوم`, cls: 'b-90d', urgent: false };
+        return { days: diffDays, text: `✅ آمن (باقي ${diffDays} يوم)`, cls: 'b-safe', urgent: false };
+    }
+
+    function setPhoneCalendarAlarm(id) {
+        const item = items.find(i => i.id === id);
+        if (!item) return;
+        const cleanDate = item.expiry.replace(/-/g, '');
+        const icsContent = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//TotersPicker//ExpiryTracker//AR',
+            'BEGIN:VEVENT',
+            `UID:toters-${item.id}@github.io`,
+            `DTSTAMP:${cleanDate}T080000Z`,
+            `DTSTART;VALUE=DATE:${cleanDate}`,
+            `SUMMARY:🚨 انتهاء صلاحية: ${item.name}`,
+            `DESCRIPTION:الباركود: ${item.barcode} - يرجى تنزيل الباركود للشركة قبل التلف.`,
+            'BEGIN:VALARM', 'TRIGGER:-P90D', 'ACTION:DISPLAY', 'DESCRIPTION:باقي 3 أشهر على انتهاء الصلاحية', 'END:VALARM',
+            'BEGIN:VALARM', 'TRIGGER:-P60D', 'ACTION:DISPLAY', 'DESCRIPTION:باقي شهرين على انتهاء الصلاحية', 'END:VALARM',
+            'BEGIN:VALARM', 'TRIGGER:-P30D', 'ACTION:DISPLAY', 'DESCRIPTION:باقي شهر على انتهاء الصلاحية', 'END:VALARM',
+            'BEGIN:VALARM', 'TRIGGER:-P15D', 'ACTION:DISPLAY', 'DESCRIPTION:باقي 15 يوم على انتهاء الصلاحية', 'END:VALARM',
+            'BEGIN:VALARM', 'TRIGGER:-P7D', 'ACTION:DISPLAY', 'DESCRIPTION:باقي أسبوع على انتهاء الصلاحية', 'END:VALARM',
+            'BEGIN:VALARM', 'TRIGGER:-P2D', 'ACTION:DISPLAY', 'DESCRIPTION:حرج! باقي يومين على انتهاء الصلاحية', 'END:VALARM',
+            'END:VEVENT',
+            'END:VCALENDAR'
+        ].join('\r\n');
+
+        const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `منبه_${item.barcode}.ics`;
+        link.click();
+    }
+
+    function exportDatabase() {
+        if (items.length === 0) {
+            alert("القائمة فارغة حالياً.");
+            return;
+        }
+        const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        const todayStr = new Date().toISOString().slice(0, 10);
+        link.download = `اكسباير_توترز_${todayStr}.json`;
+        link.click();
+    }
+
+    function importDatabase(input) {
+        if (!input.files || !input.files[0]) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const imported = JSON.parse(e.target.result);
+                if (!Array.isArray(imported)) throw new Error();
+                let added = 0;
+                imported.forEach(newItem => {
+                    const exists = items.some(old => old.barcode === newItem.barcode && old.expiry === newItem.expiry);
+                    if (!exists && newItem.name && newItem.barcode && newItem.expiry) {
+                        items.push({ ...newItem, id: Date.now() + Math.random() });
+                        added++;
+                    }
+                });
+                localStorage.setItem('toters_picker_items_v2', JSON.stringify(items));
+                renderItems();
+                alert(`✅ تم دمج ${added} مادة جديدة من قائمة زميلك بنجاح!`);
+            } catch (err) {
+                alert("❌ ملف غير صالح.");
+            }
+            input.value = '';
+        };
+        reader.readAsText(input.files[0]);
+    }
+
+    function shareCriticalWhatsApp() {
+        const critical = items.filter(item => getExpiryStatus(item.expiry).days <= 30);
+        if (critical.length === 0) {
+            alert("لا توجد مواد تنتهي خلال 30 يوماً أو أقل حالياً.");
+            return;
+        }
+        let msg = "📦 *تقرير المواد قريبة الانتهاء (اكسباير توترز):*\n\n";
+        critical.forEach((item, idx) => {
+            const st = getExpiryStatus(item.expiry);
+            msg += `${idx + 1}. *${item.name}*\n   - الباركود: ${item.barcode}\n   - الانتهاء: ${item.expiry} (${st.text})\n\n`;
+        });
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+
+    function renderItems() {
+        const list = document.getElementById('itemsList');
+        const query = document.getElementById('searchInput').value.trim().toLowerCase();
+        list.innerHTML = '';
+
+        items.sort((a, b) => new Date(a.expiry) - new Date(b.expiry));
+        document.getElementById('totalCount').innerText = items.length;
+
+        const urgentItems = items.filter(i => getExpiryStatus(i.expiry).urgent);
+        const banner = document.getElementById('alertBanner');
+        if (urgentItems.length > 0) {
+            banner.classList.remove('hidden');
+            document.getElementById('alertText').innerText = `يوجد ${urgentItems.length} مادة حرجة (تنتهي خلال أسبوع أو أقل)!`;
+        } else {
+            banner.classList.add('hidden');
+        }
+
+        const filtered = items.filter(i =>
+            i.name.toLowerCase().includes(query) || i.barcode.toLowerCase().includes(query)
+        );
+
+        if (filtered.length === 0) {
+            list.innerHTML = `<p style="text-align:center; color:#64748b; padding:20px 0;">لا توجد مواد مطابقة حالياً.</p>`;
+            return;
+        }
+
+        filtered.forEach(item => {
+            const status = getExpiryStatus(item.expiry);
+            const imgHtml = item.image
+                ? `<img src="${item.image}" class="item-thumb" alt="${item.name}">`
+                : `<div class="item-thumb">📦</div>`;
+
+            const card = document.createElement('div');
+            card.className = 'item-card';
+            card.innerHTML = `
+                ${imgHtml}
+                <div class="item-info">
+                    <div class="item-title">${item.name}</div>
+                    <div class="item-meta">الباركود: <strong style="color:#e2e8f0; font-family:monospace;">${item.barcode}</strong> • الانتهاء: ${item.expiry}</div>
+                    <span class="badge ${status.cls}">${status.text}</span>
+                    <div class="item-actions">
+                        <button type="button" onclick="setPhoneCalendarAlarm(${item.id})" class="btn btn-sm btn-alarm">🔔 ضبط منبه الهاتف</button>
+                        <button type="button" onclick="deleteItem(${item.id})" class="btn btn-sm btn-danger">🗑️ حذف</button>
+                    </div>
+                </div>
+            `;
+            list.appendChild(card);
+        });
+    }
+
+    document.getElementById('itemForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const name = document.getElementById('itemName').value.trim();
+        const barcode = document.getElementById('itemBarcode').value.trim();
+        const expiry = document.getElementById('itemExpiry').value;
+
+        items.push({ id: Date.now(), name, barcode, expiry, image: currentCompressedImage });
+
+        try {
+            localStorage.setItem('toters_picker_items_v2', JSON.stringify(items));
+        } catch (err) {
+            alert("الذاكرة ممتلئة، احذف بعض المواد القديمة.");
+            items.pop();
+            return;
+        }
+
+        this.reset();
+        currentCompressedImage = "";
+        document.getElementById('imagePreviewBox').classList.add('hidden');
+        document.getElementById('scanStatus').innerText = "";
+        renderItems();
+        playBeep(false);
+    });
+
+    function deleteItem(id) {
+        if (confirm('حذف هذه المادة من القائمة؟')) {
+            items = items.filter(i => i.id !== id);
+            localStorage.setItem('toters_picker_items_v2', JSON.stringify(items));
+            renderItems();
+        }
+    }
+
+    updateNotifButton();
+    renderItems();
+
+    const urgentOnLoad = items.filter(i => getExpiryStatus(i.expiry).urgent);
+    if (urgentOnLoad.length > 0) {
+        setTimeout(() => playBeep(true), 400);
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification("🚨 تنبيه اكسباير توترز", {
+                body: `لديك ${urgentOnLoad.length} مادة تنتهي خلال أسبوع أو أقل! راجع القائمة لتنزيل الباركود.`
+            });
+        }
+    }
+</script>
+
+</body>
+</html>
