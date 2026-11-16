@@ -6,8 +6,12 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="صلاحيات توترز">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon.png">
+    <link rel="apple-touch-icon" href="icon.png">
     <title>مراقب الصلاحيات - توترز بيكر</title>
-    <!-- مكتبة احتياطية للآيفون والمتصفحات التي لا تدعم القارئ المدمج -->
     <script src="https://unpkg.com/html5-qrcode" defer></script>
     <style>
         :root {
@@ -105,7 +109,6 @@
         .btn-slate { background: #334155; }
         .btn-whatsapp { background: #16a34a; width: 100%; margin-bottom: 10px; }
 
-        /* نافذة الكاميرا المباشرة */
         .scanner-box {
             margin-top: 10px;
             background: #000;
@@ -224,7 +227,6 @@
         <p>مسح باركود مباشر • تنبيهات ذكية • مشاركة الفريق</p>
     </header>
 
-    <!-- شريط تنبيه المواد الحرجة -->
     <div id="alertBanner" class="alert-banner hidden">
         <div>
             <strong style="font-size: 0.9rem;">🚨 تنبيه صلاحية عاجل!</strong>
@@ -233,7 +235,6 @@
         <button type="button" onclick="playBeep(true)" class="btn btn-sm btn-danger">🔊 منبه</button>
     </div>
 
-    <!-- نموذج إضافة منتج -->
     <div class="card">
         <h2>
             <span>➕ إضافة منتج جديد</span>
@@ -253,14 +254,13 @@
                     <button type="button" onclick="toggleLiveScanner()" id="scanBtn" class="btn btn-blue">📷 مسح مباشر</button>
                 </div>
 
-                <!-- نافذة البث المباشر للكاميرا -->
                 <div id="liveScannerBox" class="scanner-box hidden">
                     <video id="scannerVideo" playsinline autoplay muted></video>
                     <div id="fallbackReader" class="hidden"></div>
                     <div class="scan-line" id="scanLine"></div>
                     <div class="scanner-controls">
                         <button type="button" id="torchBtn" onclick="toggleTorch()" class="btn btn-sm btn-alarm hidden">🔦 فلاش</button>
-                        <button type="button" onclick="stopLiveScanner()" class="btn btn-sm btn-danger">✖️ إغلاق الكاميرا</button>
+                        <button type="button" onclick="stopLiveScanner(false)" class="btn btn-sm btn-danger">✖️ إغلاق الكاميرا</button>
                     </div>
                 </div>
                 <span id="scanStatus" class="status-msg"></span>
@@ -287,7 +287,6 @@
         </form>
     </div>
 
-    <!-- قائمة المواد وأدوات الفريق -->
     <div class="card">
         <h2>📋 المواد المسجلة (<span id="totalCount">0</span>)</h2>
 
@@ -319,7 +318,6 @@
     let torchOn = false;
     let html5QrFallback = null;
 
-    // 1. صوت تنبيه (يعمل محلياً بدون ملفات خارجية)
     function playBeep(loud = false) {
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -338,7 +336,6 @@
         } catch (e) {}
     }
 
-    // 2. طلب صلاحية إشعارات الهاتف
     function requestNotifPermission() {
         if (!('Notification' in window)) {
             alert("متصفحك لا يدعم الإشعارات المباشرة، استخدم زر 'ضبط منبه الهاتف' بجانب كل مادة.");
@@ -366,11 +363,10 @@
         }
     }
 
-    // 3. ماسح الباركود المباشر (Live Video Stream)
     function toggleLiveScanner() {
         const box = document.getElementById('liveScannerBox');
         if (!box.classList.contains('hidden')) {
-            stopLiveScanner();
+            stopLiveScanner(false);
         } else {
             startLiveScanner();
         }
@@ -386,7 +382,6 @@
         status.className = "status-msg text-wait";
         status.innerText = "⏳ جاري تشغيل الكاميرا... وجّه الخط الأحمر على الباركود";
 
-        // أندرويد كروم: استخدام قارئ النظام المدمج فائق السرعة
         if ('BarcodeDetector' in window && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             try {
                 video.classList.remove('hidden');
@@ -403,8 +398,8 @@
                 });
                 video.srcObject = videoStream;
                 await video.play();
+                history.pushState({ scanner: true }, '');
 
-                // فحص دعم الفلاش (Torch)
                 const track = videoStream.getVideoTracks()[0];
                 const capabilities = track.getCapabilities ? track.getCapabilities() : {};
                 if (capabilities.torch) {
@@ -427,14 +422,13 @@
                 }, 220);
                 return;
             } catch (err) {
-                stopLiveScanner();
+                stopLiveScanner(true);
                 status.className = "status-msg text-err";
                 status.innerText = "❌ تعذر الوصول للكاميرا. تأكد من السماح بصلاحية الكاميرا في المتصفح.";
                 return;
             }
         }
 
-        // احتياطي للآيفون والمتصفحات الأخرى: Html5Qrcode
         if (typeof Html5Qrcode !== 'undefined') {
             video.classList.add('hidden');
             document.getElementById('scanLine').classList.add('hidden');
@@ -446,8 +440,10 @@
                 { fps: 12, qrbox: { width: 260, height: 120 } },
                 (decodedText) => onBarcodeDetected(decodedText),
                 () => {}
-            ).catch(() => {
-                stopLiveScanner();
+            ).then(() => {
+                history.pushState({ scanner: true }, '');
+            }).catch(() => {
+                stopLiveScanner(true);
                 status.className = "status-msg text-err";
                 status.innerText = "❌ تعذر فتح الكاميرا، تأكد من منح الإذن.";
             });
@@ -461,7 +457,7 @@
         status.innerText = "✅ تم التقاط الباركود فوراً: " + code;
         if (navigator.vibrate) navigator.vibrate(120);
         playBeep(false);
-        stopLiveScanner();
+        stopLiveScanner(false);
     }
 
     async function toggleTorch() {
@@ -474,7 +470,7 @@
         } catch (e) {}
     }
 
-    function stopLiveScanner() {
+    function stopLiveScanner(fromPopState = false) {
         if (scanInterval) {
             clearInterval(scanInterval);
             scanInterval = null;
@@ -489,9 +485,17 @@
         torchOn = false;
         document.getElementById('torchBtn').classList.add('hidden');
         document.getElementById('liveScannerBox').classList.add('hidden');
+        if (!fromPopState && history.state && history.state.scanner) {
+            history.back();
+        }
     }
 
-    // 4. ضغط وحفظ صورة المنتج
+    window.addEventListener('popstate', () => {
+        if (!document.getElementById('liveScannerBox').classList.contains('hidden')) {
+            stopLiveScanner(true);
+        }
+    });
+
     function previewProductImage(input) {
         if (!input.files || !input.files[0]) return;
         const reader = new FileReader();
@@ -515,7 +519,6 @@
         reader.readAsDataURL(input.files[0]);
     }
 
-    // 5. حساب حالة الصلاحية (3 أشهر، شهرين، شهر، 15 يوم، أسبوع، يومين)
     function getExpiryStatus(expiryDateStr) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -532,7 +535,6 @@
         return { days: diffDays, text: `✅ آمن (باقي ${diffDays} يوم)`, cls: 'b-safe', urgent: false };
     }
 
-    // 6. منبه تقويم الهاتف (6 تنبيهات تلقائية حتى لو التطبيق مغلق)
     function setPhoneCalendarAlarm(id) {
         const item = items.find(i => i.id === id);
         if (!item) return;
@@ -564,7 +566,6 @@
         link.click();
     }
 
-    // 7. تصدير واستيراد القائمة لمشاركتها بين البيكرية
     function exportDatabase() {
         if (items.length === 0) {
             alert("القائمة فارغة حالياً.");
@@ -604,7 +605,6 @@
         reader.readAsText(input.files[0]);
     }
 
-    // 8. مشاركة التقرير نصياً على واتساب/تيليجرام
     function shareCriticalWhatsApp() {
         const critical = items.filter(item => getExpiryStatus(item.expiry).days <= 30);
         if (critical.length === 0) {
@@ -619,7 +619,6 @@
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
     }
 
-    // 9. عرض القائمة
     function renderItems() {
         const list = document.getElementById('itemsList');
         const query = document.getElementById('searchInput').value.trim().toLowerCase();
@@ -705,7 +704,6 @@
     updateNotifButton();
     renderItems();
 
-    // إشعار وصوت تلقائي عند فتح التطبيق إذا وجدت مواد حرجة
     const urgentOnLoad = items.filter(i => getExpiryStatus(i.expiry).urgent);
     if (urgentOnLoad.length > 0) {
         setTimeout(() => playBeep(true), 400);
