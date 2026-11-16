@@ -1,4 +1,4 @@
-const CACHE_NAME = 'toters-expiry-v4';
+const CACHE_NAME = 'toters-expiry-v5';
 const ASSETS = [
   './',
   './index.html',
